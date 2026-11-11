@@ -186,3 +186,7 @@ abonnement, et ne le redistribue pas comme un service branché sur un login clau
 partagé ou un produit, utilise le mode **clé API**.
 
 MyClaude est un projet indépendant, non affilié à Anthropic.
+
+## Licence
+
+[MIT](LICENSE) — libre d'utiliser, modifier et redistribuer le code, en conservant la mention de copyright.

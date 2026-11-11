@@ -10,5 +10,6 @@
     "dev:web": "npm --prefix web run dev",
     "start": "npm run build && npm --prefix server start",
     "desktop": "npm run build && npm --prefix desktop start"
-  }
+  },
+  "license": "MIT"
 }

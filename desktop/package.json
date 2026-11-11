@@ -30,13 +30,26 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "build/server", "to": "server" },
-      { "from": "build/web", "to": "web" }
+      {
+        "from": "build/server",
+        "to": "server"
+      },
+      {
+        "from": "build/web",
+        "to": "web"
+      }
     ],
     "asar": true,
     "npmRebuild": false,
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -45,5 +58,6 @@
       "deleteAppDataOnUninstall": false,
       "shortcutName": "MyClaude"
     }
-  }
+  },
+  "license": "MIT"
 }

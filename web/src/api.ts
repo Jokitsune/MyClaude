@@ -2,9 +2,15 @@ import type {
   AppConfig,
   ChatMessage,
   ConfigUpdate,
+  Governance,
+  GovernanceUpdate,
   Lesson,
+  PermissionDecision,
+  PermissionRequest,
   SessionMeta,
   StreamEvent,
+  ToolCall,
+  ToolResult,
 } from "./types";
 import { createMockApi } from "./mock";
 import { ApiError } from "./errors";
@@ -33,6 +39,10 @@ export interface Api {
   rejectLesson(id: string): Promise<Lesson>;
   getMemory(): Promise<{ content: string }>;
   putMemory(content: string): Promise<{ content: string }>;
+  getGovernance(): Promise<Governance>;
+  putGovernance(update: GovernanceUpdate): Promise<Governance>;
+  /** Répond à une demande d'autorisation d'outil (404 si inconnue/expirée). */
+  respondPermission(sessionId: string, reqId: string, decision: PermissionDecision): Promise<{ ok: true }>;
 }
 
 // URL relative : fonctionne via le proxy Vite en dev et quand le serveur sert le build.
@@ -84,6 +94,12 @@ function toStreamEvent(event: string, data: string): StreamEvent | null {
       return { type: "delta", text: String(p.text ?? "") };
     case "error":
       return { type: "error", error: String(p.error ?? "Erreur inconnue.") };
+    case "tool_use":
+      return typeof p.id === "string" ? { type: "tool_use", tool: p as unknown as ToolCall } : null;
+    case "tool_result":
+      return typeof p.id === "string" ? { type: "tool_result", result: p as unknown as ToolResult } : null;
+    case "permission_request":
+      return typeof p.id === "string" ? { type: "permission_request", request: p as unknown as PermissionRequest } : null;
     default:
       return null;
   }
@@ -169,6 +185,10 @@ export const httpApi: Api = {
   rejectLesson: (id) => request("POST", `/lessons/${enc(id)}/reject`),
   getMemory: () => request("GET", "/memory"),
   putMemory: (content) => request("PUT", "/memory", { content }),
+  getGovernance: () => request("GET", "/governance"),
+  putGovernance: (update) => request("PUT", "/governance", update),
+  respondPermission: (sessionId, reqId, decision) =>
+    request("POST", `/sessions/${enc(sessionId)}/permissions/${enc(reqId)}`, { decision }),
 };
 
 export const isMock = import.meta.env.VITE_MOCK === "1" || import.meta.env.MODE === "mock";

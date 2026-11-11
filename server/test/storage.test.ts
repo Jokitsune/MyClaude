@@ -173,6 +173,28 @@ describe("bilan", () => {
     assert.equal(fake.jsonCalls, 2);
   });
 
+  test("moteur non connecté → bilan reste `pending` (retenté), pas `failed`", async () => {
+    const fake = new FakeProvider();
+    fake.jsonError = new ProviderError("not_logged_in", "Connecte-toi à Claude Code (`claude` puis `/login`).");
+    const svc = new AppService(storage, () => fake, silentLogger);
+    const s = await closedSessionWithExchange();
+    svc.reviews.enqueue(s.id);
+    await svc.reviews.idle();
+    const m = await storage.requireMeta(s.id);
+    assert.equal(m.review, "pending");
+    assert.equal(m.reviewError, undefined);
+  });
+
+  test("bilan au JSON invalide → `failed`", async () => {
+    const fake = new FakeProvider();
+    fake.jsonResult = { pasDeLecons: true };
+    const svc = new AppService(storage, () => fake, silentLogger);
+    const s = await closedSessionWithExchange();
+    svc.reviews.enqueue(s.id);
+    await svc.reviews.idle();
+    assert.equal((await storage.requireMeta(s.id)).review, "failed");
+  });
+
   test("approbation : ajout à memory.md sans doublon", async () => {
     const fake = new FakeProvider();
     const svc = new AppService(storage, () => fake, silentLogger);

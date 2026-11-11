@@ -2,8 +2,13 @@ import { startServerInternal, type RunningServer, type StartOptions } from "./ap
 
 export type { StartOptions, RunningServer } from "./app.js";
 export type {
+  AccountInfo,
   AppConfig,
+  AuthMode,
   ChatMessage,
+  PermissionDecision,
+  PermissionRequest,
+  ToolCall,
   CloseReason,
   Lesson,
   ReviewStatus,

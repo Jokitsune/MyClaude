@@ -1,8 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import {
+  AUTH_MODES,
   AVAILABLE_MODELS,
+  DEFAULT_AUTH_MODE,
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   DEFAULT_TITLE,
@@ -39,6 +42,11 @@ function newSessionId(d = new Date()): string {
   return `${stamp}_${randomBytes(2).toString("hex")}`;
 }
 
+/** Dossier de travail par défaut : %USERPROFILE%\MyClaude-workspace. */
+export function defaultWorkspaceDir(): string {
+  return path.join(os.homedir(), "MyClaude-workspace");
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
@@ -54,7 +62,11 @@ export class Storage {
   readonly memoryFile: string;
   private readonly lock = new KeyedMutex();
 
-  constructor(readonly dataDir: string) {
+  constructor(
+    readonly dataDir: string,
+    /** Dossier de travail utilisé tant que config.json n'en définit pas (injectable pour les tests). */
+    readonly defaultWorkspace: string = defaultWorkspaceDir(),
+  ) {
     this.sessionsDir = path.join(dataDir, "sessions");
     this.lessonsDir = path.join(dataDir, "lessons");
     this.configFile = path.join(dataDir, "config.json");
@@ -72,7 +84,10 @@ export class Storage {
     const raw = (await readJson<Partial<StoredConfig>>(this.configFile)) ?? {};
     const model = AVAILABLE_MODELS.some((m) => m.id === raw.model) ? raw.model! : DEFAULT_MODEL;
     const effort = raw.effort && EFFORTS.includes(raw.effort) ? raw.effort : DEFAULT_EFFORT;
-    const cfg: StoredConfig = { model, effort };
+    const authMode = raw.authMode && AUTH_MODES.includes(raw.authMode) ? raw.authMode : DEFAULT_AUTH_MODE;
+    const workspaceDir =
+      typeof raw.workspaceDir === "string" && path.isAbsolute(raw.workspaceDir) ? raw.workspaceDir : this.defaultWorkspace;
+    const cfg: StoredConfig = { model, effort, authMode, workspaceDir };
     if (typeof raw.apiKey === "string" && raw.apiKey.trim()) cfg.apiKey = raw.apiKey.trim();
     return cfg;
   }

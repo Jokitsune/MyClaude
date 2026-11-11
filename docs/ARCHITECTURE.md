@@ -1,7 +1,11 @@
 # MyClaude — Architecture & contrat
 
-Interface personnelle pour Claude, **100 % locale** (interface + historique), **indépendante du compte
-Claude connecté** (clé API personnelle propre à l'app, jamais de login claude.ai).
+Interface personnelle pour Claude, **100 % locale** (interface + historique), avec une **gouvernance
+indépendante du compte** : le compte Claude connecté (abonnement) ne fournit que le moteur ; sessions,
+mémoire, leçons, outils, agents et règles appartiennent à MyClaude et sont identiques quel que soit le compte.
+
+> **v2 — voir la section « v2 : mode Abonnement (Claude Code) & outils » en fin de document.** Elle
+> prévaut sur la v1 en cas de conflit (notamment le principe 2 ci-dessous).
 
 ## Principes non négociables
 
@@ -188,3 +192,103 @@ Electron. Le processus principal importe `startServer({ port: 0, dataDir, webDir
 puis ouvre une `BrowserWindow` sur `http://127.0.0.1:<port>`. `contextIsolation: true`,
 `nodeIntegration: false`, `sandbox: true`, navigation externe bloquée (liens ouverts dans le navigateur
 système). À la fermeture : `await server.close()` avant de quitter. Instance unique.
+
+---
+
+## v2 : mode Abonnement (Claude Code) & outils
+
+### Objectif
+
+- **Moteur = compte connecté.** Par défaut, MyClaude utilise l'abonnement du compte actuellement connecté
+  à Claude Code sur ce PC, via le **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`). Pas de clé API.
+- **Gouvernance = MyClaude.** Tout ce qui définit le comportement vient du `dataDir` de MyClaude, jamais
+  de la config du compte ni de `~/.claude` : prompt système, `memory.md`, outils autorisés, serveurs MCP,
+  sous-agents, dossier de travail. `settingSources: []` (aucun réglage utilisateur/projet/local chargé),
+  MCP uniquement ceux de MyClaude, aucun CLAUDE.md externe.
+- **Mode clé API conservé en option** (même moteur Agent SDK, clé injectée via l'environnement du
+  sous-processus uniquement).
+- Usage personnel uniquement (rappel affiché dans Réglages).
+
+### Authentification du sous-processus
+
+- `authMode: "subscription"` (défaut) : l'environnement passé au SDK est une copie de `process.env`
+  **sans** `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` (pour forcer le login Claude Code).
+- `authMode: "apiKey"` : même nettoyage, puis `ANTHROPIC_API_KEY = config.apiKey`.
+- Le compte détecté (email/organisation/type d'abonnement si le SDK l'expose) est renvoyé dans `AppConfig.account`.
+  S'il n'y a pas de login : erreur claire « Connecte-toi à Claude Code (`claude` puis `/login`) ».
+
+### Outils & permissions (option « complet »)
+
+- `cwd` = `config.workspaceDir` (défaut `%USERPROFILE%\MyClaude-workspace`, créé si absent).
+- Outils intégrés autorisés par défaut : Read, Glob, Grep, Write, Edit, Bash, WebFetch, WebSearch, TodoWrite
+  (liste modifiable dans `governance/tools.json`). Les sous-agents (Task) sont autorisés si `agents.json` en définit.
+- Décision par appel d'outil (`canUseTool`) :
+  1. Chemin de fichier hors `workspaceDir` (après résolution, anti `..`/liens) → **refus** automatique.
+  2. Read / Glob / Grep / TodoWrite dans le dossier → **autorisé** automatiquement.
+  3. Tout le reste (Write, Edit, Bash, WebFetch, WebSearch, MCP, sous-agents) → **demande de validation**
+     à l'utilisateur, sauf si déjà autorisé « pour cette session » pour cet outil.
+  4. Pas de réponse en 10 min, ou client déconnecté → **refus**.
+- Toutes les décisions sont journalisées dans `events.jsonl` (`{type:"permission", tool, input, decision, by}`).
+
+### Fichiers de gouvernance (`dataDir/governance/`)
+
+```
+system.md     consignes de base de MyClaude (créé avec un défaut FR)
+tools.json    { "allowed": string[] }
+mcp.json      { "mcpServers": { ... } }   même format que Claude Code
+agents.json   { "<nom>": { "description", "prompt", "tools"?, "model"? } }
+```
+
+### Changements de types
+
+```ts
+interface AppConfig {
+  // + champs v1 (hasApiKey, model, effort, dataDir, availableModels)
+  authMode: "subscription" | "apiKey";
+  workspaceDir: string;
+  account?: { email?: string; organization?: string; subscription?: string } | null;
+  engineReady: boolean;        // Claude Code joignable + compte connecté (ou clé présente en mode apiKey)
+  engineError?: string;
+}
+interface ToolCall {
+  id: string; name: string; input: unknown;
+  status: "pending_approval" | "running" | "done" | "error" | "denied";
+  resultPreview?: string;      // 2000 caractères max
+}
+interface ChatMessage { /* v1 + */ tools?: ToolCall[] }
+interface PermissionRequest { id: string; sessionId: string; toolCallId: string; tool: string; input: unknown; summary: string; }
+```
+
+`availableModels` en v2 : alias acceptés par Claude Code (`opus`, `sonnet`, `haiku`) + IDs complets
+(`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`). Défaut : `claude-opus-5-5`.
+
+### API ajoutée / modifiée
+
+| Méthode | Route | Corps / réponse |
+|---|---|---|
+| PUT | `/api/config` | + `authMode?`, `workspaceDir?` |
+| GET | `/api/governance` | `{ system, tools, mcp, agents }` (contenus des 4 fichiers, tools/mcp/agents en objets JSON) |
+| PUT | `/api/governance` | mêmes champs (partiel) → idem ; JSON validé, erreur 400 en FR si invalide |
+| POST | `/api/sessions/:id/permissions/:reqId` | `{ decision: "allow" \| "deny" \| "allow_session" }` → `{ ok: true }` (404 si inconnue/expirée) |
+
+Nouveaux événements SSE dans `POST /api/sessions/:id/messages` :
+
+```
+event: tool_use            data: ToolCall                 (status running ou pending_approval)
+event: permission_request  data: PermissionRequest
+event: tool_result         data: { id, status, resultPreview }
+```
+
+### Continuité des conversations
+
+- MyClaude reste la source de vérité de l'historique. L'ID de session du SDK est stocké dans `meta.json`
+  (`engineSessionId`) et repris (`resume`) au message suivant.
+- Si la reprise échoue (transcription Claude Code absente, compte changé…), on relance une nouvelle
+  session SDK en injectant la transcription MyClaude (texte des échanges) dans le prompt.
+- Suppression d'une session MyClaude → supprimer aussi la transcription Claude Code correspondante si on
+  peut la localiser de façon sûre ; sinon ne rien supprimer.
+
+### Bilan
+
+Le bilan de fin de session passe par le même moteur, **sans aucun outil**, et attend une sortie JSON
+(validée côté serveur ; en cas de JSON invalide → `failed`, retenté plus tard).

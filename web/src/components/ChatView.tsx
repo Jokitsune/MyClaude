@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
-import { errorMessage, isAbortError } from "../errors";
-import type { AppConfig, ChatMessage, SessionMeta } from "../types";
-import { STATUS_LABEL, modelLabel } from "../util";
+import { ApiError, errorMessage, isAbortError } from "../errors";
+import type { AppConfig, ChatMessage, PermissionDecision, SessionMeta, ToolCall } from "../types";
+import { STATUS_LABEL, engineReady, modelLabel } from "../util";
+import { summaryText } from "../tools";
 import { Composer } from "./Composer";
 import { IconRetry, IconSettings, Logo } from "./Icons";
 import { CopyButton, Markdown } from "./Markdown";
+import { ToolList, type PermState } from "./ToolActivity";
 
 const HEARTBEAT_MS = 30_000;
 
@@ -16,11 +18,29 @@ interface Props {
   onSessionCreated(meta: SessionMeta): void;
   onSessionsChanged(): void;
   onOpenSettings(): void;
+  onRecheckEngine(): void;
 }
 
 interface Draft {
   thinking: string;
   text: string;
+  tools: ToolCall[];
+  perms: PermState[];
+}
+
+const DECISION_LABEL: Record<PermissionDecision, string> = {
+  allow: "Autorisé.",
+  allow_session: "Autorisé pour toute la session.",
+  deny: "Refusé.",
+};
+
+/** Un message figé ne doit pas garder d'outil « en cours » / « en attente ». */
+function settleTools(tools: ToolCall[]): ToolCall[] {
+  return tools.map((t) =>
+    t.status === "running" || t.status === "pending_approval"
+      ? { ...t, status: "error", resultPreview: t.resultPreview ?? "Interrompu." }
+      : t,
+  );
 }
 
 let localCounter = 0;
@@ -43,7 +63,70 @@ function Thinking({ text, live }: { text: string; live?: boolean }) {
   );
 }
 
-export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSessionsChanged, onOpenSettings }: Props) {
+function EngineSetup({ config, onOpenSettings, onRecheck }: { config: AppConfig; onOpenSettings(): void; onRecheck(): void }) {
+  const subscription = config.authMode !== "apiKey";
+  return (
+    <div className="welcome">
+      <Logo size={40} />
+      <h2 className="serif welcome-title">Bienvenue dans MyClaude</h2>
+      {subscription ? (
+        <>
+          <p className="muted">
+            MyClaude utilise comme moteur le compte connecté à Claude Code sur ce PC (mode Abonnement). Aucun compte
+            utilisable n'est détecté pour l'instant.
+          </p>
+          <ol className="setup-steps">
+            <li>
+              Ouvre un terminal, lance <code>claude</code> puis <code>/login</code>
+            </li>
+            <li>Termine la connexion dans le navigateur, puis reviens ici.</li>
+            <li>Clique sur « Revérifier ».</li>
+          </ol>
+          {config.engineError && (
+            <p className="engine-error small" role="note">
+              Détail : {config.engineError}
+            </p>
+          )}
+          <div className="welcome-actions">
+            <button type="button" className="btn btn-primary" onClick={onRecheck}>
+              <IconRetry size={16} /> Revérifier
+            </button>
+            <button type="button" className="btn" onClick={onOpenSettings}>
+              <IconSettings size={16} /> Réglages
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="muted">
+            Le moteur est réglé sur « Clé API » : enregistrez votre clé API Anthropic dans les Réglages. Elle reste sur
+            cette machine. Vous pouvez aussi repasser en mode Abonnement (Claude Code).
+          </p>
+          {config.engineError && (
+            <p className="engine-error small" role="note">
+              Détail : {config.engineError}
+            </p>
+          )}
+          <div className="welcome-actions">
+            <button type="button" className="btn btn-primary" onClick={onOpenSettings}>
+              <IconSettings size={16} /> Ouvrir les Réglages
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function ChatView({
+  config,
+  sessionId,
+  menuButton,
+  onSessionCreated,
+  onSessionsChanged,
+  onOpenSettings,
+  onRecheckEngine,
+}: Props) {
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,12 +137,15 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
   const [closing, setClosing] = useState(false);
   const [restore, setRestore] = useState<{ text: string; n: number } | null>(null);
   const [status, setStatus] = useState("");
+  const [alertText, setAlertText] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
   const createdIdRef = useRef<string | null>(null);
   const genRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  /** Brouillon du flux en cours (mutable) + session visée, pour répondre aux demandes d'autorisation. */
+  const liveRef = useRef<{ draft: Draft; sessionId: string } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   // Chargement de la session affichée.
@@ -151,8 +237,10 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
       abortRef.current = ctrl;
       const pendingId = localId("user");
       setMessages((m) => [...m, { id: pendingId, role: "user", text, createdAt: new Date().toISOString() }]);
-      const local: Draft = { thinking: "", text: "" };
-      setDraft({ ...local });
+      const local: Draft = { thinking: "", text: "", tools: [], perms: [] };
+      const sync = () => setDraft({ ...local });
+      liveRef.current = { draft: local, sessionId: id };
+      sync();
       setStreaming(true);
       setStatus("Claude rédige une réponse…");
       stickRef.current = true;
@@ -167,6 +255,7 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
             role: "assistant",
             text: local.text,
             thinking: local.thinking || undefined,
+            tools: local.tools.length ? settleTools(local.tools) : undefined,
             error,
             createdAt: new Date().toISOString(),
           },
@@ -185,15 +274,53 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
                 break;
               case "thinking":
                 local.thinking += ev.text;
-                setDraft({ ...local });
+                sync();
                 break;
               case "delta":
                 local.text += ev.text;
-                setDraft({ ...local });
+                sync();
                 break;
+              case "tool_use": {
+                const t = ev.tool;
+                const i = local.tools.findIndex((x) => x.id === t.id);
+                local.tools = i === -1 ? [...local.tools, t] : local.tools.map((x, j) => (j === i ? { ...x, ...t } : x));
+                sync();
+                break;
+              }
+              case "tool_result": {
+                const r = ev.result;
+                local.tools = local.tools.map((x) =>
+                  x.id === r.id ? { ...x, status: r.status, resultPreview: r.resultPreview ?? x.resultPreview } : x,
+                );
+                // Une décision prise côté serveur (expiration, déconnexion) clôt la demande.
+                local.perms = local.perms.map((p) =>
+                  p.req.toolCallId === r.id && (p.state === "pending" || p.state === "sending")
+                    ? { ...p, state: "expired" }
+                    : p,
+                );
+                sync();
+                break;
+              }
+              case "permission_request": {
+                const req = ev.request;
+                local.tools = local.tools.some((x) => x.id === req.toolCallId)
+                  ? local.tools.map((x) => (x.id === req.toolCallId ? { ...x, status: "pending_approval" } : x))
+                  : [...local.tools, { id: req.toolCallId, name: req.tool, input: req.input, status: "pending_approval" }];
+                local.perms = [...local.perms.filter((p) => p.req.id !== req.id), { req, state: "pending" }];
+                stickRef.current = true;
+                sync();
+                const what = req.summary || summaryText(req.tool, req.input);
+                setAlertText(`Autorisation requise : ${what}. Choisissez Autoriser, Toujours pour cette session ou Refuser.`);
+                break;
+              }
               case "done":
                 finished = true;
-                setMessages((m) => [...m, ev.message]);
+                setMessages((m) => [
+                  ...m,
+                  ev.message.tools?.length || !local.tools.length
+                    ? ev.message
+                    : { ...ev.message, tools: settleTools(local.tools) },
+                ]);
                 setDraft(null);
                 setStatus("Réponse terminée.");
                 break;
@@ -230,6 +357,8 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
         }
       } finally {
         if (abortRef.current === ctrl) abortRef.current = null;
+        if (liveRef.current?.draft === local) liveRef.current = null;
+        setAlertText("");
         onSessionsChanged();
         if (alive()) {
           setDraft(null);
@@ -248,6 +377,41 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
 
   const stop = () => abortRef.current?.abort();
 
+  const decide = useCallback(async (reqId: string, decision: PermissionDecision) => {
+    const live = liveRef.current;
+    if (!live) return;
+    const local = live.draft;
+    const patch = (fn: (p: PermState) => PermState) => {
+      local.perms = local.perms.map((p) => (p.req.id === reqId ? fn(p) : p));
+      if (liveRef.current?.draft === local) setDraft({ ...local });
+    };
+    const perm = local.perms.find((p) => p.req.id === reqId);
+    if (!perm || perm.state !== "pending") return;
+    patch((p) => ({ ...p, state: "sending", error: undefined }));
+    setAlertText("");
+    try {
+      await api.respondPermission(live.sessionId, reqId, decision);
+      // Mise à jour optimiste ; `tool_result` donnera l'état final.
+      local.tools = local.tools.map((t) =>
+        t.id === perm.req.toolCallId && t.status === "pending_approval"
+          ? { ...t, status: decision === "deny" ? "denied" : "running" }
+          : t,
+      );
+      patch((p) => ({ ...p, state: "answered", decision }));
+      setStatus(DECISION_LABEL[decision]);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        local.tools = local.tools.map((t) =>
+          t.id === perm.req.toolCallId && t.status === "pending_approval" ? { ...t, status: "denied" } : t,
+        );
+        patch((p) => ({ ...p, state: "expired" }));
+        setStatus("Cette demande d'autorisation a expiré.");
+      } else {
+        patch((p) => ({ ...p, state: "pending", error: errorMessage(e) }));
+      }
+    }
+  }, []);
+
   const closeSession = async () => {
     if (!meta) return;
     setClosing(true);
@@ -264,16 +428,20 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
   };
 
   const isOpen = !meta || meta.status === "open";
-  const composerDisabled = !config.hasApiKey || !isOpen || loading || !!loadError;
-  const disabledReason = !config.hasApiKey
-    ? "Ajoutez une clé API dans les Réglages pour discuter."
+  const ready = engineReady(config);
+  const composerDisabled = !ready || !isOpen || loading || !!loadError;
+  const disabledReason = !ready
+    ? config.authMode === "apiKey"
+      ? "Ajoutez une clé API dans les Réglages pour discuter."
+      : "Connectez-vous à Claude Code (claude puis /login) pour discuter."
     : !isOpen
       ? "Cette session est terminée. Démarrez une nouvelle session pour continuer."
       : "Chargement…";
 
   const last = messages[messages.length - 1];
   const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.text;
-  const canRetry = !streaming && isOpen && config.hasApiKey && last?.role === "assistant" && !!last.error && !!lastUserText;
+  const canRetry = !streaming && isOpen && ready && last?.role === "assistant" && !!last.error && !!lastUserText;
+  const waitingApproval = !!draft?.perms.some((p) => p.state === "pending" || p.state === "sending");
 
   const isEmpty = !sessionId && messages.length === 0 && !streaming;
   const model = meta?.model ?? config.model;
@@ -313,21 +481,11 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
             </div>
           )}
 
-          {isEmpty && !config.hasApiKey && (
-            <div className="welcome">
-              <Logo size={40} />
-              <h2 className="serif welcome-title">Bienvenue dans MyClaude</h2>
-              <p className="muted">
-                Pour commencer, enregistrez votre clé API Anthropic. Elle reste sur cette machine et sert
-                uniquement aux appels au modèle.
-              </p>
-              <button type="button" className="btn btn-primary" onClick={onOpenSettings}>
-                <IconSettings size={16} /> Ouvrir les Réglages
-              </button>
-            </div>
+          {isEmpty && !ready && (
+            <EngineSetup config={config} onOpenSettings={onOpenSettings} onRecheck={onRecheckEngine} />
           )}
 
-          {isEmpty && config.hasApiKey && (
+          {isEmpty && ready && (
             <div className="welcome">
               <Logo size={40} />
               <h2 className="serif welcome-title">{greeting()}, que puis-je faire pour vous ?</h2>
@@ -342,6 +500,7 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
                 ) : (
                   <div className="assistant">
                     {m.thinking && <Thinking text={m.thinking} />}
+                    {m.tools && m.tools.length > 0 && <ToolList tools={m.tools} />}
                     {m.text && <Markdown text={m.text} />}
                     {m.error && (
                       <div className="msg-error" role="note">
@@ -366,7 +525,16 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
               <li className="msg msg-assistant">
                 <div className="assistant" aria-live="polite" aria-busy={streaming}>
                   <Thinking text={draft.thinking} live />
-                  {draft.text ? <Markdown text={draft.text} /> : <span className="typing" aria-label="En attente de la réponse"><i /><i /><i /></span>}
+                  <ToolList tools={draft.tools} perms={draft.perms} onDecide={decide} />
+                  {draft.text ? (
+                    <Markdown text={draft.text} />
+                  ) : waitingApproval ? null : (
+                    <span className="typing" aria-label="En attente de la réponse">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  )}
                 </div>
               </li>
             )}
@@ -414,6 +582,9 @@ export function ChatView({ config, sessionId, menuButton, onSessionCreated, onSe
       </div>
       <div className="sr-only" role="status" aria-live="polite">
         {status}
+      </div>
+      <div className="sr-only" aria-live="assertive" aria-atomic="true">
+        {alertText}
       </div>
     </section>
   );

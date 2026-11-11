@@ -1,4 +1,4 @@
-import type { SessionMeta } from "./types";
+import type { AppConfig, SessionMeta } from "./types";
 
 const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
 const dateFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" });
@@ -42,6 +42,11 @@ export const EFFORT_LABEL: Record<string, string> = {
   xhigh: "Très élevé",
   max: "Maximum",
 };
+
+/** Le moteur est-il prêt ? (repli sur `hasApiKey` si le serveur est encore en v1). */
+export function engineReady(config: AppConfig): boolean {
+  return typeof config.engineReady === "boolean" ? config.engineReady : config.hasApiKey;
+}
 
 export function modelLabel(id: string, models: { id: string; label: string }[] | undefined): string {
   return models?.find((m) => m.id === id)?.label ?? id;

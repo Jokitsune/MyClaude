@@ -1,5 +1,5 @@
 import type { Logger } from "./log.js";
-import { ProviderError, type ProviderFactory } from "./providers/types.js";
+import { ProviderError, RETRY_LATER_CODES, type ProviderFactory } from "./providers/types.js";
 import type { Storage } from "./storage.js";
 import type { ChatMessage, Lesson } from "./types.js";
 
@@ -158,7 +158,7 @@ export class ReviewQueue {
 
     const config = await this.storage.readConfig();
     const provider = this.providerFactory(config);
-    if (!provider) return; // Pas de clé : reste `pending`, sera retenté.
+    if (!provider) return; // Mode clé API sans clé : reste `pending`, sera retenté.
 
     await this.storage.updateMeta(id, (m) => {
       m.review = "running";
@@ -196,7 +196,8 @@ export class ReviewQueue {
     } catch (err) {
       if (!(await this.storage.getMeta(id))) return;
       const aborted = abort.signal.aborted || (err instanceof ProviderError && err.code === "aborted");
-      const noKey = err instanceof ProviderError && err.code === "no_key";
+      // Pas de clé / pas connecté / Claude Code absent : reste `pending`, retenté plus tard.
+      const noKey = err instanceof ProviderError && RETRY_LATER_CODES.has(err.code);
       const message =
         err instanceof ProviderError ? err.message : "Erreur inattendue pendant le bilan.";
       await this.storage.updateMeta(id, (m) => {

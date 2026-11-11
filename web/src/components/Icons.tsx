@@ -62,6 +62,40 @@ export const IconChat = ({ size }: P) => (
   <svg {...base(size)}><path d="M4 5h16v11H9l-5 4z" /></svg>
 );
 
+export const IconFile = ({ size }: P) => (
+  <svg {...base(size)}><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8zM14 3v5h5M8.5 13h7M8.5 17h5" /></svg>
+);
+export const IconPencil = ({ size }: P) => (
+  <svg {...base(size)}><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17zM14 7l3 3" /></svg>
+);
+export const IconTerminal = ({ size }: P) => (
+  <svg {...base(size)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M12.5 15H17" /></svg>
+);
+export const IconSearch = ({ size }: P) => (
+  <svg {...base(size)}><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></svg>
+);
+export const IconGlobe = ({ size }: P) => (
+  <svg {...base(size)}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z" /></svg>
+);
+export const IconList = ({ size }: P) => (
+  <svg {...base(size)}><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg>
+);
+export const IconAgent = ({ size }: P) => (
+  <svg {...base(size)}><rect x="5" y="8" width="14" height="11" rx="3" /><path d="M12 4v4M9.5 13h.01M14.5 13h.01M2.5 13v2M21.5 13v2" /></svg>
+);
+export const IconPlug = ({ size }: P) => (
+  <svg {...base(size)}><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4" /></svg>
+);
+export const IconTool = ({ size }: P) => (
+  <svg {...base(size)}><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5l3 3 5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
+);
+export const IconShield = ({ size }: P) => (
+  <svg {...base(size)}><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.4-7.5 9.5-4.3-1.1-7.5-4.9-7.5-9.5V6z" /><path d="M9 12l2.2 2.2L15.5 10" /></svg>
+);
+export const IconWarning = ({ size }: P) => (
+  <svg {...base(size)}><path d="M12 4L2.5 20h19zM12 10v4.5M12 17.5h.01" /></svg>
+);
+
 /** Marque originale de MyClaude : un astérisque doux dans un rond. */
 export const Logo = ({ size = 22 }: P) => (
   <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">

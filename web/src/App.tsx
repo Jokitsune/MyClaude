@@ -7,6 +7,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { LearningView } from "./components/LearningView";
 import { SettingsView } from "./components/SettingsView";
+import { GovernanceView } from "./components/GovernanceView";
 import { IconMenu, Logo } from "./components/Icons";
 
 const REFRESH_MS = 20_000;
@@ -171,11 +172,19 @@ export default function App() {
             onSessionCreated={onSessionCreated}
             onSessionsChanged={onSessionsChanged}
             onOpenSettings={() => goView("settings")}
+            onRecheckEngine={loadConfig}
           />
         </div>
         {view === "learning" && <LearningView menuButton={menuButton} onLessonsChanged={refreshLessons} />}
+        {view === "governance" && <GovernanceView menuButton={menuButton} />}
         {view === "settings" && (
-          <SettingsView config={config} menuButton={menuButton} onConfig={setConfig} theme={theme} onTheme={setTheme} />
+          <SettingsView
+            config={config}
+            menuButton={menuButton}
+            onConfig={setConfig}
+            theme={theme}
+            onTheme={setTheme}
+          />
         )}
       </main>
     </div>

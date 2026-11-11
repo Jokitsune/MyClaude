@@ -7,12 +7,13 @@ import {
   IconMoon,
   IconPlus,
   IconSettings,
+  IconShield,
   IconSun,
   IconTrash,
   Logo,
 } from "./Icons";
 
-export type View = "chat" | "learning" | "settings";
+export type View = "chat" | "learning" | "governance" | "settings";
 
 interface Props {
   open: boolean;
@@ -119,6 +120,15 @@ export function Sidebar(p: Props) {
                 {p.pendingLessons}
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            className={`side-link ${p.view === "governance" ? "active" : ""}`}
+            onClick={() => p.onView("governance")}
+            aria-current={p.view === "governance" ? "page" : undefined}
+          >
+            <IconShield size={17} />
+            <span>Gouvernance</span>
           </button>
           <button
             type="button"

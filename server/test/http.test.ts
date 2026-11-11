@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { startServerInternal, type InternalRunningServer } from "../src/app.js";
 import { checkRequestOrigin } from "../src/http.js";
@@ -39,13 +40,18 @@ describe("serveur HTTP (fournisseur factice, aucun appel réseau)", () => {
   let tmp: ReturnType<typeof tmpDir>;
   let server: InternalRunningServer;
   const fake = new FakeProvider();
-  let hasKey = false;
 
   before(async () => {
     tmp = tmpDir();
     server = await startServerInternal(
       { port: 0, dataDir: tmp.dir },
-      { providerFactory: (cfg) => (cfg.apiKey && hasKey ? fake : null), logger: silentLogger, idleCheck: false },
+      {
+        // Comme la fabrique réelle : aucun moteur en mode clé API sans clé.
+        providerFactory: (cfg) => (cfg.authMode === "apiKey" && !cfg.apiKey ? null : fake),
+        logger: silentLogger,
+        idleCheck: false,
+        defaultWorkspaceDir: path.join(tmp.dir, "ws"),
+      },
     );
   });
   after(async () => {
@@ -81,7 +87,10 @@ describe("serveur HTTP (fournisseur factice, aucun appel réseau)", () => {
     const cfg = JSON.parse(put.body);
     assert.equal(cfg.hasApiKey, true);
     assert.equal(cfg.effort, "high");
-    assert.equal(cfg.availableModels.length, 4);
+    assert.equal(cfg.availableModels.length, 6);
+    assert.equal(cfg.authMode, "subscription");
+    assert.equal(cfg.engineReady, true);
+    assert.equal(cfg.account.email, "test@example.com");
     const get = await req({ path: "/api/config" });
     assert.ok(!get.body.includes("sk-ant-secret-123"));
     assert.equal((await req({ method: "PUT", path: "/api/config", body: { model: "gpt-4" } })).status, 400);
@@ -94,7 +103,6 @@ describe("serveur HTTP (fournisseur factice, aucun appel réseau)", () => {
   });
 
   test("flux SSE complet puis journalisation", async () => {
-    hasKey = true;
     const s = JSON.parse((await req({ method: "POST", path: "/api/sessions", body: {} })).body) as SessionMeta;
     const r = await req({ method: "POST", path: `/api/sessions/${s.id}/messages`, body: { text: "Salut Claude" } });
     assert.equal(r.status, 200);
@@ -119,7 +127,6 @@ describe("serveur HTTP (fournisseur factice, aucun appel réseau)", () => {
   });
 
   test("déconnexion du client en cours de flux → appel interrompu, réponse partielle journalisée", async () => {
-    hasKey = true;
     fake.hangAfterFirstDelta = true;
     try {
       const s = JSON.parse((await req({ method: "POST", path: "/api/sessions", body: {} })).body) as SessionMeta;
@@ -167,8 +174,12 @@ describe("serveur HTTP (fournisseur factice, aucun appel réseau)", () => {
     }
   });
 
-  test("sans clé : erreur SSE claire, message journalisé avec error", async () => {
-    hasKey = false;
+  test("mode clé API sans clé : erreur SSE claire, moteur non prêt", async () => {
+    const put = await req({ method: "PUT", path: "/api/config", body: { authMode: "apiKey", apiKey: null } });
+    const cfg = JSON.parse(put.body);
+    assert.equal(cfg.authMode, "apiKey");
+    assert.equal(cfg.engineReady, false);
+    assert.match(cfg.engineError, /clé API/);
     const s = JSON.parse((await req({ method: "POST", path: "/api/sessions", body: {} })).body) as SessionMeta;
     const r = await req({ method: "POST", path: `/api/sessions/${s.id}/messages`, body: { text: "Test" } });
     const events = parseSse(r.body);

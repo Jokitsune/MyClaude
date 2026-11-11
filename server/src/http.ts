@@ -4,6 +4,7 @@ import path from "node:path";
 import { HttpError } from "./errors.js";
 import type { Logger } from "./log.js";
 import type { AppService, SseSink } from "./service.js";
+import { isValidRequestId } from "./permissions.js";
 import { isValidLessonId, isValidSessionId } from "./storage.js";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -256,8 +257,15 @@ async function routeApi(
 
   // /api/config
   if (seg.length === 1 && seg[0] === "config") {
-    if (method === "GET") return sendJson(res, 200, await svc.getConfig());
+    if (method === "GET") return sendJson(res, 200, await svc.getConfig({ refresh: url.searchParams.get("refresh") === "1" }));
     if (method === "PUT") return sendJson(res, 200, await svc.putConfig(await readBody(req)));
+    return notAllowed();
+  }
+
+  // /api/governance
+  if (seg.length === 1 && seg[0] === "governance") {
+    if (method === "GET") return sendJson(res, 200, await svc.getGovernance());
+    if (method === "PUT") return sendJson(res, 200, await svc.putGovernance(await readBody(req)));
     return notAllowed();
   }
 
@@ -296,6 +304,14 @@ async function routeApi(
         case "messages":
           return handleMessageStream(ctx, id, req, res);
       }
+    }
+    // /api/sessions/:id/permissions/:reqId
+    if (seg.length === 4 && seg[2] === "permissions") {
+      if (method !== "POST") return notAllowed();
+      const reqId = seg[3]!;
+      if (!isValidRequestId(reqId)) throw new HttpError(404, "Demande de permission introuvable ou expirée.");
+      await svc.respondPermission(id, reqId, await readBody(req));
+      return sendJson(res, 200, { ok: true });
     }
     throw new HttpError(404, "Route inconnue.");
   }

@@ -32,6 +32,10 @@ export interface InternalOptions {
   dev?: boolean;
   /** Désactive la tâche d'inactivité périodique (tests). */
   idleCheck?: boolean;
+  /** Délai de refus automatique des demandes de permission (tests). */
+  permissionTimeoutMs?: number;
+  /** Dossier de travail par défaut (tests). */
+  defaultWorkspaceDir?: string;
 }
 
 export interface InternalRunningServer extends RunningServer {
@@ -64,8 +68,10 @@ export async function startServerInternal(opts: StartOptions = {}, internal: Int
   if (opts.host !== undefined && opts.host !== host) throw new Error("MyClaude n'écoute que sur 127.0.0.1.");
   const log = internal.logger ?? consoleLogger;
   const dataDir = path.resolve(opts.dataDir ?? defaultDataDir());
-  const storage = new Storage(dataDir);
-  const service = new AppService(storage, internal.providerFactory ?? defaultProviderFactory, log);
+  const storage = new Storage(dataDir, internal.defaultWorkspaceDir);
+  const service = new AppService(storage, internal.providerFactory ?? defaultProviderFactory, log, {
+    permissionTimeoutMs: internal.permissionTimeoutMs,
+  });
   await service.start({ idleCheck: internal.idleCheck });
 
   let port = 0;

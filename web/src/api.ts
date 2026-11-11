@@ -1,5 +1,8 @@
 import type {
   AppConfig,
+  CcProject,
+  CcSessionSummary,
+  CcTranscript,
   ChatMessage,
   ConfigUpdate,
   Governance,
@@ -43,6 +46,12 @@ export interface Api {
   putGovernance(update: GovernanceUpdate): Promise<Governance>;
   /** Répond à une demande d'autorisation d'outil (404 si inconnue/expirée). */
   respondPermission(sessionId: string, reqId: string, decision: PermissionDecision): Promise<{ ok: true }>;
+  // v3 : sessions Claude Code locales (lecture seule)
+  listCcProjects(): Promise<CcProject[]>;
+  listCcSessions(projectId: string, q?: string): Promise<CcSessionSummary[]>;
+  getCcTranscript(projectId: string, sessionId: string): Promise<CcTranscript>;
+  /** Crée une session MyClaude qui reprend la session Claude Code (400 si dossier refusé). */
+  continueCcSession(projectId: string, sessionId: string, workspaceDir: string): Promise<SessionMeta>;
 }
 
 // URL relative : fonctionne via le proxy Vite en dev et quand le serveur sert le build.
@@ -189,6 +198,12 @@ export const httpApi: Api = {
   putGovernance: (update) => request("PUT", "/governance", update),
   respondPermission: (sessionId, reqId, decision) =>
     request("POST", `/sessions/${enc(sessionId)}/permissions/${enc(reqId)}`, { decision }),
+  listCcProjects: () => request("GET", "/cc/projects"),
+  listCcSessions: (projectId, q) =>
+    request("GET", `/cc/projects/${enc(projectId)}/sessions${q && q.trim() ? `?q=${enc(q.trim())}` : ""}`),
+  getCcTranscript: (projectId, sessionId) => request("GET", `/cc/projects/${enc(projectId)}/sessions/${enc(sessionId)}`),
+  continueCcSession: (projectId, sessionId, workspaceDir) =>
+    request("POST", `/cc/projects/${enc(projectId)}/sessions/${enc(sessionId)}/continue`, { workspaceDir }),
 };
 
 export const isMock = import.meta.env.VITE_MOCK === "1" || import.meta.env.MODE === "mock";

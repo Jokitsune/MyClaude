@@ -2,7 +2,7 @@ import { AgentSdkProvider } from "./agent-sdk.js";
 import type { ProviderFactory } from "./types.js";
 
 export * from "./types.js";
-export { AgentSdkProvider, buildEngineEnv, isolationOptions, mapEngineError } from "./agent-sdk.js";
+export { AgentSdkProvider, buildEngineEnv, forkClaudeCodeSession, isolationOptions, mapEngineError } from "./agent-sdk.js";
 
 /**
  * Fabrique par défaut : Claude Agent SDK.

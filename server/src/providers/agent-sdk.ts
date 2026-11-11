@@ -2,6 +2,7 @@ import os from "node:os";
 import {
   USAGE_LIMIT_ERROR_PREFIXES,
   deleteSession,
+  forkSession,
   query,
   type HookCallback,
   type Options,
@@ -467,6 +468,17 @@ export class AgentSdkProvider implements Provider {
     if (!UUID_RE.test(sessionId)) return;
     await deleteSession(sessionId, { dir: cwd });
   }
+}
+
+/**
+ * v3 : fork d'une session Claude Code locale via `forkSession` du SDK.
+ * Le SDK lit le fichier source et écrit les entrées (UUID remappés) dans un NOUVEAU fichier
+ * `<nouvel-id>.jsonl` du même dossier projet ; le fichier d'origine n'est jamais réécrit.
+ */
+export async function forkClaudeCodeSession(sessionId: string): Promise<string> {
+  if (!UUID_RE.test(sessionId)) throw new Error("identifiant de session invalide");
+  const { sessionId: forkId } = await forkSession(sessionId);
+  return forkId;
 }
 
 /** JSON éventuellement entouré d'un bloc de code Markdown. */

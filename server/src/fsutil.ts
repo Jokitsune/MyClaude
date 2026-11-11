@@ -61,6 +61,12 @@ export async function readJson<T>(file: string): Promise<T | undefined> {
  * insère d'abord un saut de ligne pour ne pas souder la nouvelle ligne à l'ancienne.
  */
 export async function appendJsonLine(file: string, value: unknown): Promise<void> {
+  return appendJsonLines(file, [value]);
+}
+
+/** Variante groupée : plusieurs lignes JSON en une écriture (un seul fsync). */
+export async function appendJsonLines(file: string, values: unknown[]): Promise<void> {
+  if (!values.length) return;
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const fh = await fsp.open(file, "a+");
   try {
@@ -71,7 +77,7 @@ export async function appendJsonLine(file: string, value: unknown): Promise<void
       await fh.read(buf, 0, 1, size - 1);
       if (buf[0] !== 0x0a) prefix = "\n";
     }
-    await fh.write(prefix + JSON.stringify(value) + "\n");
+    await fh.write(prefix + values.map((v) => JSON.stringify(v)).join("\n") + "\n");
     await fh.sync();
   } finally {
     await fh.close();

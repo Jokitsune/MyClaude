@@ -15,6 +15,11 @@ export interface SessionMeta {
   model: string;
   review: ReviewStatus;
   reviewError?: string;
+  engineSessionId?: string; // v2 : ID de session du moteur (Claude Agent SDK)
+  engineCwd?: string;       // v2 : dossier de travail de cette session moteur
+  // v3
+  workspaceDir?: string;    // surcharge par session du dossier de travail global
+  origin?: { type: "claude-code"; projectId: string; sessionId: string };
 }
 
 export interface ChatMessage {
@@ -26,6 +31,7 @@ export interface ChatMessage {
   usage?: { input_tokens: number; output_tokens: number };
   error?: string;           // si la réponse a échoué / été interrompue
   tools?: ToolCall[];       // v2 : appels d'outils effectués pendant la réponse
+  imported?: boolean;       // v3 : message importé d'une session Claude Code reprise
 }
 
 export interface Lesson {
@@ -59,6 +65,15 @@ export interface ToolCall {
 }
 
 export interface PermissionRequest { id: string; sessionId: string; toolCallId: string; tool: string; input: unknown; summary: string; }
+
+// v3 : sessions Claude Code locales (consulter + reprendre)
+export interface CcProject { id: string; path: string | null; sessionCount: number; lastActivity: string | null }
+export interface CcSessionSummary {
+  id: string; projectId: string; cwd: string | null; title: string;   // 1er message utilisateur ou résumé
+  startedAt: string | null; updatedAt: string | null; messageCount: number;
+  gitBranch?: string | null; fromMyClaude: boolean;
+}
+export interface CcTranscript { session: CcSessionSummary; messages: ChatMessage[]; truncated: boolean }
 
 // --- Types propres au client web (hors contrat partagé) ---
 

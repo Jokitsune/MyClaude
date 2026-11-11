@@ -8,6 +8,7 @@ import { ChatView } from "./components/ChatView";
 import { LearningView } from "./components/LearningView";
 import { SettingsView } from "./components/SettingsView";
 import { GovernanceView } from "./components/GovernanceView";
+import { CcView, type CcNav } from "./components/CcView";
 import { IconMenu, Logo } from "./components/Icons";
 
 const REFRESH_MS = 20_000;
@@ -22,6 +23,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
+  const [ccNav, setCcNav] = useState<CcNav>({ projectId: null, sessionId: null });
 
   useEffect(() => {
     applyTheme(theme);
@@ -81,6 +83,16 @@ export default function App() {
     setSessions((s) => [m, ...s.filter((x) => x.id !== m.id)]);
     setActiveId(m.id);
   }, []);
+
+  const onCcContinued = useCallback(
+    (m: SessionMeta) => {
+      setSessions((s) => [m, ...s.filter((x) => x.id !== m.id)]);
+      setActiveId(m.id);
+      setView("chat");
+      refreshSessions();
+    },
+    [refreshSessions],
+  );
 
   const onSessionsChanged = useCallback(() => {
     refreshSessions();
@@ -175,6 +187,9 @@ export default function App() {
             onRecheckEngine={loadConfig}
           />
         </div>
+        {view === "claude-code" && (
+          <CcView config={config} menuButton={menuButton} nav={ccNav} onNav={setCcNav} onContinued={onCcContinued} />
+        )}
         {view === "learning" && <LearningView menuButton={menuButton} onLessonsChanged={refreshLessons} />}
         {view === "governance" && <GovernanceView menuButton={menuButton} />}
         {view === "settings" && (

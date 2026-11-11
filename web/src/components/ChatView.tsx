@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { ApiError, errorMessage, isAbortError } from "../errors";
 import type { AppConfig, ChatMessage, PermissionDecision, SessionMeta, ToolCall } from "../types";
 import { STATUS_LABEL, engineReady, modelLabel } from "../util";
 import { summaryText } from "../tools";
 import { Composer } from "./Composer";
-import { IconRetry, IconSettings, Logo } from "./Icons";
-import { CopyButton, Markdown } from "./Markdown";
+import { IconFolder, IconRetry, IconSettings, Logo } from "./Icons";
+import { Markdown } from "./Markdown";
+import { MessageBody, Thinking } from "./MessageView";
 import { ToolList, type PermState } from "./ToolActivity";
 
 const HEARTBEAT_MS = 30_000;
@@ -49,18 +50,6 @@ const localId = (p: string) => `local-${p}-${++localCounter}`;
 function greeting(): string {
   const h = new Date().getHours();
   return h >= 18 || h < 5 ? "Bonsoir" : "Bonjour";
-}
-
-function Thinking({ text, live }: { text: string; live?: boolean }) {
-  if (!text && !live) return null;
-  return (
-    <details className="thinking">
-      <summary>
-        {live && !text ? "Réflexion en cours…" : live ? "Réflexion…" : "Réflexion"}
-      </summary>
-      <div className="thinking-body">{text || "…"}</div>
-    </details>
-  );
 }
 
 function EngineSetup({ config, onOpenSettings, onRecheck }: { config: AppConfig; onOpenSettings(): void; onRecheck(): void }) {
@@ -460,7 +449,20 @@ export function ChatView({
                 <span className={`badge badge-${meta.status}`}>{STATUS_LABEL[meta.status]}</span>
               </>
             )}
+            {meta?.origin?.type === "claude-code" && (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span className="badge badge-cc">Reprise de Claude Code</span>
+              </>
+            )}
           </p>
+          {meta && (meta.workspaceDir || meta.origin) && (
+            <p className="header-sub header-dir" title={meta.workspaceDir ?? config.workspaceDir}>
+              <span className="sr-only">Dossier de travail : </span>
+              <IconFolder size={13} />
+              <span className="mono dir-text">{meta.workspaceDir ?? config.workspaceDir}</span>
+            </p>
+          )}
         </div>
         {meta?.status === "open" && (
           <button type="button" className="btn btn-ghost" onClick={closeSession} disabled={closing}>
@@ -493,34 +495,35 @@ export function ChatView({
           )}
 
           <ol className="messages" aria-label="Messages">
-            {messages.map((m) => (
-              <li key={m.id} className={`msg msg-${m.role}`}>
-                {m.role === "user" ? (
-                  <div className="bubble">{m.text}</div>
-                ) : (
-                  <div className="assistant">
-                    {m.thinking && <Thinking text={m.thinking} />}
-                    {m.tools && m.tools.length > 0 && <ToolList tools={m.tools} />}
-                    {m.text && <Markdown text={m.text} />}
-                    {m.error && (
-                      <div className="msg-error" role="note">
-                        <span>{m.error}</span>
-                        {canRetry && m === last && (
+            {messages.map((m, i) => {
+              const prevImported = i > 0 && !!messages[i - 1].imported;
+              return (
+                <Fragment key={m.id}>
+                  {m.imported && i === 0 && (
+                    <li className="history-divider">
+                      <span>Historique importé de Claude Code</span>
+                    </li>
+                  )}
+                  {!m.imported && prevImported && (
+                    <li className="history-divider history-divider-new">
+                      <span>Suite dans MyClaude</span>
+                    </li>
+                  )}
+                  <li className={`msg msg-${m.role}${m.imported ? " msg-imported" : ""}`}>
+                    <MessageBody
+                      m={m}
+                      errorAction={
+                        canRetry && m === last ? (
                           <button type="button" className="btn btn-small" onClick={() => send(lastUserText!)}>
                             <IconRetry size={14} /> Réessayer
                           </button>
-                        )}
-                      </div>
-                    )}
-                    {m.text && !m.error && (
-                      <div className="msg-actions">
-                        <CopyButton text={m.text} label="Copier" />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
+                        ) : undefined
+                      }
+                    />
+                  </li>
+                </Fragment>
+              );
+            })}
             {draft && (
               <li className="msg msg-assistant">
                 <div className="assistant" aria-live="polite" aria-busy={streaming}>

@@ -103,3 +103,9 @@ export const Logo = ({ size = 22 }: P) => (
     <path d="M16 8v16M9.1 12l13.8 8M9.1 20l13.8-8" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
   </svg>
 );
+export const IconFolder = ({ size }: P) => (
+  <svg {...base(size)}><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /></svg>
+);
+export const IconBranch = ({ size }: P) => (
+  <svg {...base(size)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 5-6 4-12 8" /></svg>
+);

@@ -146,7 +146,8 @@ export class ReviewQueue {
     if (!meta || meta.status === "open") return;
     if (meta.review === "done" || meta.review === "running") return;
 
-    const messages = await this.storage.readMessages(id);
+    // v3 : seuls les échanges faits dans MyClaude comptent (pas les messages importés de Claude Code).
+    const messages = (await this.storage.readMessages(id)).filter((m) => !m.imported);
     if (!hasExchange(messages)) {
       // Rien à analyser : bilan terminé sans leçon.
       await this.storage.updateMeta(id, (m) => {

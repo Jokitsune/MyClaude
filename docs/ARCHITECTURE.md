@@ -292,3 +292,62 @@ event: tool_result         data: { id, status, resultPreview }
 
 Le bilan de fin de session passe par le même moteur, **sans aucun outil**, et attend une sortie JSON
 (validée côté serveur ; en cas de JSON invalide → `failed`, retenté plus tard).
+
+---
+
+## v3 : sessions Claude Code locales (consulter + reprendre)
+
+Objectif : depuis MyClaude, voir les sessions Claude Code de ce PC (CLI, extension, etc. — transcriptions
+JSONL sous `<CLAUDE_CONFIG_DIR ou ~/.claude>/projects/<projet>/<sessionId>.jsonl`), les lire, et en
+**continuer une dans MyClaude**, avec son contexte, mais **sous la gouvernance MyClaude** (règles, outils,
+permissions, journal, bilan).
+
+### Règles
+
+- **Lecture seule** sur les fichiers de Claude Code : on ne modifie, ne déplace ni ne supprime jamais une
+  transcription d'origine. La reprise doit **forker** la session (option du SDK type `forkSession`) pour
+  que l'original reste intact ; si le SDK ne le permet pas, reprendre via réinjection de la transcription
+  (mécanisme v2 de repli) plutôt que d'écrire dans l'original.
+- Préférer les fonctions du Claude Agent SDK pour lister/lire les sessions si elles existent ; sinon parser
+  le JSONL en streaming, tolérant (lignes invalides ignorées), sans charger un fichier énorme en entier
+  (limite raisonnable + indication « tronqué »).
+- IDs de projet et de session validés (pas de traversée de chemin) ; ne lire que sous le dossier `projects`.
+- Les sessions créées par MyClaude lui-même (engineSessionId connus) sont marquées `fromMyClaude: true`.
+
+### Dossier de travail par session
+
+- `SessionMeta.workspaceDir?: string` : surcharge par session du dossier de travail global (pathguard,
+  `cwd` du moteur et permissions l'utilisent).
+- À la reprise, le dossier proposé = `cwd` d'origine de la session Claude Code. Il passe les mêmes
+  validations que `workspaceDir` (absolu, existe, pas une racine de lecteur, ne contient pas et n'est pas
+  dans le `dataDir`). S'il est refusé (ex. `C:\Users\<moi>` qui contient AppData), l'API renvoie 400 avec
+  la raison et l'interface demande un autre dossier (pré-rempli avec le dossier de travail global).
+
+### Types
+
+```ts
+interface CcProject { id: string; path: string | null; sessionCount: number; lastActivity: string | null }
+interface CcSessionSummary {
+  id: string; projectId: string; cwd: string | null; title: string;   // 1er message utilisateur ou résumé
+  startedAt: string | null; updatedAt: string | null; messageCount: number;
+  gitBranch?: string | null; fromMyClaude: boolean;
+}
+interface CcTranscript { session: CcSessionSummary; messages: ChatMessage[]; truncated: boolean }
+interface SessionMeta { /* v2 + */ workspaceDir?: string;
+  origin?: { type: "claude-code"; projectId: string; sessionId: string } }
+```
+
+Les messages de transcription sont convertis en `ChatMessage` (texte, `tools` avec `resultPreview`
+tronqué, `thinking` si présent) ; les entrées techniques (méta, résumés internes, commandes locales) sont
+ignorées.
+
+### API
+
+| Méthode | Route | Corps / réponse |
+|---|---|---|
+| GET | `/api/cc/projects` | `CcProject[]` triés par `lastActivity` desc |
+| GET | `/api/cc/projects/:projectId/sessions?q=` | `CcSessionSummary[]` (filtre texte optionnel sur le titre) |
+| GET | `/api/cc/projects/:projectId/sessions/:sessionId` | `CcTranscript` |
+| POST | `/api/cc/projects/:projectId/sessions/:sessionId/continue` | `{ workspaceDir: string }` → `SessionMeta` (nouvelle session MyClaude `open`, `origin` renseigné, messages d'origine importés dans son journal marqués `imported: true`, `engineSessionId` prêt pour la reprise forkée) ; 400 si dossier refusé |
+
+Le bilan de fin de session ne porte que sur les messages **non importés** (ce qui s'est passé dans MyClaude).

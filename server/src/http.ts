@@ -6,6 +6,7 @@ import type { Logger } from "./log.js";
 import type { AppService, SseSink } from "./service.js";
 import { isValidRequestId } from "./permissions.js";
 import { isValidLessonId, isValidSessionId } from "./storage.js";
+import { isValidCcProjectId, isValidCcSessionId } from "./claudecode.js";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const SSE_PING_MS = 15_000;
@@ -312,6 +313,33 @@ async function routeApi(
       if (!isValidRequestId(reqId)) throw new HttpError(404, "Demande de permission introuvable ou expirée.");
       await svc.respondPermission(id, reqId, await readBody(req));
       return sendJson(res, 200, { ok: true });
+    }
+    throw new HttpError(404, "Route inconnue.");
+  }
+
+  // /api/cc/projects[...] (v3 : sessions Claude Code locales, lecture seule + reprise)
+  if (seg[0] === "cc") {
+    if (seg[1] !== "projects") throw new HttpError(404, "Route inconnue.");
+    if (seg.length === 2) {
+      if (method !== "GET") return notAllowed();
+      return sendJson(res, 200, await svc.listCcProjects());
+    }
+    const projectId = seg[2]!;
+    if (!isValidCcProjectId(projectId)) throw new HttpError(404, "Projet introuvable.");
+    if (seg[3] !== "sessions") throw new HttpError(404, "Route inconnue.");
+    if (seg.length === 4) {
+      if (method !== "GET") return notAllowed();
+      return sendJson(res, 200, await svc.listCcSessions(projectId, url.searchParams.get("q") ?? undefined));
+    }
+    const sessionId = seg[4]!;
+    if (!isValidCcSessionId(sessionId)) throw new HttpError(404, "Session Claude Code introuvable.");
+    if (seg.length === 5) {
+      if (method !== "GET") return notAllowed();
+      return sendJson(res, 200, await svc.getCcTranscript(projectId, sessionId));
+    }
+    if (seg.length === 6 && seg[5] === "continue") {
+      if (method !== "POST") return notAllowed();
+      return sendJson(res, 200, await svc.continueCcSession(projectId, sessionId, await readBody(req)));
     }
     throw new HttpError(404, "Route inconnue.");
   }

@@ -20,6 +20,10 @@ export interface SessionMeta {
   engineSessionId?: string;
   /** v2 : dossier de travail utilisé par cette session moteur (pour localiser sa transcription). */
   engineCwd?: string;
+  /** v3 : dossier de travail propre à cette session (surcharge le dossier global). */
+  workspaceDir?: string;
+  /** v3 : session reprise depuis une session Claude Code locale. */
+  origin?: { type: "claude-code"; projectId: string; sessionId: string };
 }
 
 export interface ToolCall {
@@ -39,6 +43,34 @@ export interface ChatMessage {
   usage?: { input_tokens: number; output_tokens: number };
   error?: string; // si la réponse a échoué / été interrompue
   tools?: ToolCall[]; // v2 : appels d'outils de la réponse
+  imported?: boolean; // v3 : message importé d'une session Claude Code (exclu du bilan)
+}
+
+/** v3 : dossier projet Claude Code (`<config>/projects/<id>`). */
+export interface CcProject {
+  id: string;
+  path: string | null;
+  sessionCount: number;
+  lastActivity: string | null;
+}
+
+/** v3 : résumé d'une session Claude Code locale. */
+export interface CcSessionSummary {
+  id: string;
+  projectId: string;
+  cwd: string | null;
+  title: string; // titre personnalisé, résumé ou 1er message utilisateur
+  startedAt: string | null;
+  updatedAt: string | null;
+  messageCount: number;
+  gitBranch?: string | null;
+  fromMyClaude: boolean;
+}
+
+export interface CcTranscript {
+  session: CcSessionSummary;
+  messages: ChatMessage[];
+  truncated: boolean;
 }
 
 export interface PermissionRequest {

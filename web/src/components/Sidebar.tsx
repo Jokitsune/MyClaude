@@ -9,11 +9,12 @@ import {
   IconSettings,
   IconShield,
   IconSun,
+  IconTerminal,
   IconTrash,
   Logo,
 } from "./Icons";
 
-export type View = "chat" | "learning" | "governance" | "settings";
+export type View = "chat" | "claude-code" | "learning" | "governance" | "settings";
 
 interface Props {
   open: boolean;
@@ -107,6 +108,15 @@ export function Sidebar(p: Props) {
         </nav>
 
         <div className="sidebar-bottom">
+          <button
+            type="button"
+            className={`side-link ${p.view === "claude-code" ? "active" : ""}`}
+            onClick={() => p.onView("claude-code")}
+            aria-current={p.view === "claude-code" ? "page" : undefined}
+          >
+            <IconTerminal size={17} />
+            <span>Sessions Claude Code</span>
+          </button>
           <button
             type="button"
             className={`side-link ${p.view === "learning" ? "active" : ""}`}

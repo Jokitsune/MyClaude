@@ -3,6 +3,9 @@ import type { Api } from "./api";
 import { ApiError } from "./errors";
 import type {
   AppConfig,
+  CcProject,
+  CcSessionSummary,
+  CcTranscript,
   ChatMessage,
   Governance,
   Lesson,
@@ -208,6 +211,236 @@ export function createMockApi(): Api {
     );
   }
 
+
+  // --- v3 : fausses sessions Claude Code locales (contenu synthétique) ---
+  const HOME = "C:\\Users\\vous";
+  const DATA_DIR = "C:\\Users\\vous\\AppData\\Roaming\\MyClaude\\data";
+  const ccMsg = (role: ChatMessage["role"], text: string, ago: number, extra: Partial<ChatMessage> = {}): ChatMessage => ({
+    id: uid("cc"),
+    role,
+    text,
+    createdAt: iso(ago),
+    ...extra,
+  });
+  const H = 3600e3;
+  const D = 86400e3;
+  const ccData: { project: Omit<CcProject, "sessionCount" | "lastActivity">; sessions: CcTranscript[] }[] = [
+    {
+      project: { id: "C--Users-vous-projets-site-vitrine", path: `${HOME}\\projets\\site-vitrine` },
+      sessions: [
+        {
+          session: {
+            id: "6f1c2a9e-1b7d-4a3e-9c51-0d2e8f4b7a10",
+            projectId: "C--Users-vous-projets-site-vitrine",
+            cwd: `${HOME}\\projets\\site-vitrine`,
+            title: "Ajouter un formulaire de contact accessible",
+            startedAt: iso(2 * H + 40 * 60e3),
+            updatedAt: iso(2 * H),
+            messageCount: 4,
+            gitBranch: "feature/contact",
+            fromMyClaude: false,
+          },
+          truncated: false,
+          messages: [
+            ccMsg("user", "Ajoute un formulaire de contact accessible sur la page d'accueil.", 2 * H + 40 * 60e3),
+            ccMsg("assistant", "Je regarde d'abord la structure de la page d'accueil.", 2 * H + 39 * 60e3, {
+              thinking: "Il faut trouver le composant de la page d'accueil puis ajouter un formulaire avec labels associés.",
+              tools: [
+                {
+                  id: uid("cct"),
+                  name: "Glob",
+                  input: { pattern: "src/**/*.html" },
+                  status: "done",
+                  resultPreview: "src/index.html\nsrc/mentions-legales.html",
+                },
+                {
+                  id: uid("cct"),
+                  name: "Read",
+                  input: { file_path: `${HOME}\\projets\\site-vitrine\\src\\index.html` },
+                  status: "done",
+                  resultPreview: '<main>\n  <section class="hero">…</section>\n</main>',
+                },
+              ],
+            }),
+            ccMsg("user", "Oui, avec un champ e-mail obligatoire.", 2 * H + 20 * 60e3),
+            ccMsg(
+              "assistant",
+              "C'est fait : le formulaire a des `label` associés, un champ e-mail `required` et un message d'erreur annoncé aux lecteurs d'écran.",
+              2 * H,
+              {
+                tools: [
+                  {
+                    id: uid("cct"),
+                    name: "Edit",
+                    input: {
+                      file_path: `${HOME}\\projets\\site-vitrine\\src\\index.html`,
+                      old_string: "</main>",
+                      new_string: '  <form class="contact">…</form>\n</main>',
+                    },
+                    status: "done",
+                    resultPreview: "Fichier mis à jour (1 remplacement).",
+                  },
+                  {
+                    id: uid("cct"),
+                    name: "Bash",
+                    input: { command: "npm run lint", description: "Vérifier le HTML" },
+                    status: "error",
+                    resultPreview: "index.html:42 avertissement : attribut autocomplete manquant",
+                  },
+                ],
+              },
+            ),
+          ],
+        },
+        {
+          session: {
+            id: "a3d47b20-55e1-4c0f-8f6a-2b9c1e7d3f42",
+            projectId: "C--Users-vous-projets-site-vitrine",
+            cwd: `${HOME}\\projets\\site-vitrine`,
+            title: "Optimiser les images du portfolio",
+            startedAt: iso(3 * D),
+            updatedAt: iso(3 * D - 25 * 60e3),
+            messageCount: 2,
+            gitBranch: "main",
+            fromMyClaude: true,
+          },
+          truncated: false,
+          messages: [
+            ccMsg("user", "Peux-tu convertir les images du portfolio en WebP ?", 3 * D),
+            ccMsg("assistant", "Les 12 images ont été converties en WebP (gain moyen : 64 %).", 3 * D - 25 * 60e3, {
+              tools: [
+                {
+                  id: uid("cct"),
+                  name: "Bash",
+                  input: { command: "npx sharp-cli -i img/*.jpg -o img/ -f webp", description: "Conversion WebP" },
+                  status: "done",
+                  resultPreview: "12 fichiers convertis.",
+                },
+              ],
+            }),
+          ],
+        },
+        {
+          session: {
+            id: "c9e0f8b1-77aa-4d12-b3e4-5f6a7b8c9d01",
+            projectId: "C--Users-vous-projets-site-vitrine",
+            cwd: `${HOME}\\projets\\site-vitrine`,
+            title: "Corriger le menu mobile qui ne se ferme pas",
+            startedAt: iso(9 * D),
+            updatedAt: iso(9 * D - H),
+            messageCount: 2,
+            gitBranch: "fix/menu-mobile",
+            fromMyClaude: false,
+          },
+          truncated: false,
+          messages: [
+            ccMsg("user", "Le menu mobile ne se ferme pas quand on clique sur un lien.", 9 * D),
+            ccMsg("assistant", "J'ai ajouté la fermeture du menu au clic sur un lien et avec la touche Échap.", 9 * D - H),
+          ],
+        },
+      ],
+    },
+    {
+      project: { id: "C--Users-vous", path: HOME },
+      sessions: [
+        {
+          session: {
+            id: "e2b5c7d9-0a1b-4c2d-8e3f-9a0b1c2d3e4f",
+            projectId: "C--Users-vous",
+            cwd: HOME,
+            title: "Ranger le dossier Téléchargements (longue session)",
+            startedAt: iso(30 * H),
+            updatedAt: iso(28 * H),
+            messageCount: 240,
+            gitBranch: null,
+            fromMyClaude: false,
+          },
+          truncated: true,
+          messages: Array.from({ length: 40 }, (_, i) => {
+            const n = Math.floor(i / 2) + 1;
+            return i % 2 === 0
+              ? ccMsg("user", `Étape ${n} : trie les fichiers de type n°${n}.`, 30 * H - i * 60e3)
+              : ccMsg("assistant", `Fichiers de l'étape ${n} déplacés dans \`Téléchargements\\tri-${n}\`.`, 30 * H - i * 60e3, {
+                  tools: [
+                    {
+                      id: uid("cct"),
+                      name: "Bash",
+                      input: { command: `mkdir tri-${n}`, description: "Créer le dossier de tri" },
+                      status: "done",
+                      resultPreview: "",
+                    },
+                  ],
+                });
+          }),
+        },
+        {
+          session: {
+            id: "f4a6b8c0-2d3e-4f50-9a1b-c2d3e4f5a6b7",
+            projectId: "C--Users-vous",
+            cwd: HOME,
+            title: "Question rapide sur PowerShell",
+            startedAt: iso(12 * D),
+            updatedAt: iso(12 * D),
+            messageCount: 2,
+            gitBranch: null,
+            fromMyClaude: false,
+          },
+          truncated: false,
+          messages: [
+            ccMsg("user", "Comment lister les fichiers de plus de 1 Go en PowerShell ?", 12 * D),
+            ccMsg("assistant", "```powershell\nGet-ChildItem -Recurse -File | Where-Object Length -gt 1GB\n```", 12 * D),
+          ],
+        },
+      ],
+    },
+    {
+      project: { id: "C--Users-vous-outils-scripts-anciens", path: null },
+      sessions: [
+        {
+          session: {
+            id: "0b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+            projectId: "C--Users-vous-outils-scripts-anciens",
+            cwd: null,
+            title: "Script de sauvegarde",
+            startedAt: null,
+            updatedAt: iso(40 * D),
+            messageCount: 2,
+            fromMyClaude: false,
+          },
+          truncated: false,
+          messages: [
+            ccMsg("user", "Écris un script de sauvegarde simple.", 40 * D),
+            ccMsg("assistant", "Voici un script `robocopy` minimal pour sauvegarder `Documents`.", 40 * D),
+          ],
+        },
+      ],
+    },
+  ];
+
+  const ccProject = (id: string) => {
+    const p = ccData.find((x) => x.project.id === id);
+    if (!p) throw new ApiError(404, "Projet Claude Code introuvable.");
+    return p;
+  };
+  const ccSession = (projectId: string, sessionId: string) => {
+    const t = ccProject(projectId).sessions.find((x) => x.session.id === sessionId);
+    if (!t) throw new ApiError(404, "Session Claude Code introuvable.");
+    return t;
+  };
+  /** Mêmes validations que `workspaceDir` côté serveur (simplifiées). */
+  const checkDir = (dir: string): string | null => {
+    const raw = dir.trim();
+    const d = raw.replace(/[\\/]+$/, "");
+    const norm = (x: string) => x.toLowerCase().replace(/\//g, "\\");
+    if (!/^[a-zA-Z]:([\\/]|$)/.test(raw)) return "Le dossier de travail doit être un chemin absolu.";
+    if (/^[a-zA-Z]:$/.test(d)) return "Le dossier de travail ne peut pas être la racine d'un lecteur.";
+    if (norm(DATA_DIR).startsWith(norm(d) + "\\"))
+      return `Le dossier « ${d} » contient le dossier de données de MyClaude (${DATA_DIR}). Choisissez un dossier plus précis.`;
+    if (norm(d).startsWith(norm(DATA_DIR))) return "Le dossier de travail ne peut pas être dans le dossier de données de MyClaude.";
+    if (/introuvable/i.test(d)) return `Le dossier « ${d} » n'existe pas.`;
+    return null;
+  };
+
   const cfg = (): AppConfig => {
     const subscription = config.authMode === "subscription";
     const engineReady = subscription ? !ENGINE_OFF : !!config.apiKey;
@@ -215,7 +448,7 @@ export function createMockApi(): Api {
       hasApiKey: !!config.apiKey,
       model: config.model,
       effort: config.effort,
-      dataDir: "C:\\Users\\vous\\AppData\\Roaming\\MyClaude\\data",
+      dataDir: DATA_DIR,
       availableModels: MODELS,
       authMode: config.authMode,
       workspaceDir: config.workspaceDir,
@@ -510,6 +743,52 @@ export function createMockApi(): Api {
       }
       p.resolve(decision);
       return { ok: true };
+    },
+    async listCcProjects() {
+      await wait(120);
+      return ccData
+        .map((p): CcProject => {
+          const dates = p.sessions.map((t) => t.session.updatedAt).filter((x): x is string => !!x).sort();
+          return { ...p.project, sessionCount: p.sessions.length, lastActivity: dates[dates.length - 1] ?? null };
+        })
+        .sort((a, b) => (b.lastActivity ?? "").localeCompare(a.lastActivity ?? ""));
+    },
+    async listCcSessions(projectId, q) {
+      await wait(120);
+      const needle = (q ?? "").trim().toLowerCase();
+      return clone<CcSessionSummary[]>(
+        ccProject(projectId)
+          .sessions.map((t) => t.session)
+          .filter((s) => !needle || s.title.toLowerCase().includes(needle))
+          .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
+      );
+    },
+    async getCcTranscript(projectId, sessionId) {
+      await wait(180);
+      return clone(ccSession(projectId, sessionId));
+    },
+    async continueCcSession(projectId, sessionId, workspaceDir) {
+      await wait(300);
+      const t = ccSession(projectId, sessionId);
+      const problem = checkDir(workspaceDir);
+      if (problem) throw new ApiError(400, problem);
+      const now = iso();
+      const id = `${now.slice(0, 10)}_${now.slice(11, 19).replace(/:/g, "")}_${Math.random().toString(16).slice(2, 6)}`;
+      const meta: SessionMeta = {
+        id,
+        title: t.session.title,
+        status: "open",
+        createdAt: now,
+        updatedAt: now,
+        lastHeartbeat: now,
+        model: config.model,
+        review: "pending",
+        workspaceDir: workspaceDir.trim(),
+        origin: { type: "claude-code", projectId, sessionId },
+        engineSessionId: sessionId,
+      };
+      sessions.set(id, { meta, messages: clone(t.messages).map((m) => ({ ...m, imported: true })) });
+      return clone(meta);
     },
     async getGovernance() {
       await wait(80);

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
+import { CcNotFoundError, ClaudeCodeSessions, isValidCcSessionId } from "./claudecode.js";
 import { HttpError } from "./errors.js";
 import { GovernanceStore, validateGovernancePatch, type Governance } from "./governance.js";
 import type { Logger } from "./log.js";
@@ -25,6 +26,9 @@ import {
   EFFORTS,
   type AppConfig,
   type AuthMode,
+  type CcProject,
+  type CcSessionSummary,
+  type CcTranscript,
   type ChatMessage,
   type Effort,
   type Lesson,
@@ -57,6 +61,13 @@ interface ActiveStream {
 export interface ServiceOptions {
   /** Délai avant refus automatique d'une demande de permission (défaut 10 min). */
   permissionTimeoutMs?: number;
+  /** v3 : dossier `projects` de Claude Code (défaut : CLAUDE_CONFIG_DIR ou ~/.claude). */
+  claudeProjectsDir?: () => string;
+  /**
+   * v3 : copie une session Claude Code dans une NOUVELLE session (nouvel ID, nouveau fichier) sans
+   * toucher à l'original. Défaut (app.ts) : `forkSession` du Claude Agent SDK. Renvoie l'ID de la copie.
+   */
+  forkSession?: (sessionId: string) => Promise<string>;
 }
 
 function autoTitle(text: string): string {
@@ -153,6 +164,8 @@ export class AppService {
   readonly reviews: ReviewQueue;
   readonly governance: GovernanceStore;
   readonly permissions: PermissionBroker;
+  readonly claudeCode: ClaudeCodeSessions;
+  private readonly forkCcSession: ((sessionId: string) => Promise<string>) | null;
   private readonly active = new Map<string, ActiveStream>();
   private idleTimer: NodeJS.Timeout | null = null;
   private stopped = false;
@@ -168,6 +181,8 @@ export class AppService {
     this.governance = new GovernanceStore(storage.dataDir, log);
     this.permissions = new PermissionBroker(opts.permissionTimeoutMs);
     this.reviews = new ReviewQueue(storage, providerFactory, log);
+    this.claudeCode = new ClaudeCodeSessions(opts.claudeProjectsDir);
+    this.forkCcSession = opts.forkSession ?? null;
   }
 
   // ------------------------------------------------------------ cycle de vie
@@ -297,8 +312,11 @@ export class AppService {
     return out;
   }
 
-  /** Valide (et crée si besoin) un dossier de travail. Renvoie le chemin normalisé. */
-  async validateWorkspaceDir(raw: unknown): Promise<string> {
+  /**
+   * Valide (et crée si besoin, sauf `mustExist`) un dossier de travail. Renvoie le chemin normalisé.
+   * Mêmes règles pour le dossier global et le dossier propre à une session (v3).
+   */
+  async validateWorkspaceDir(raw: unknown, opts: { mustExist?: boolean } = {}): Promise<string> {
     if (typeof raw !== "string" || !raw.trim()) throw new HttpError(400, "Le dossier de travail doit être un chemin.");
     const p = raw.trim();
     if (p.length > 1024 || p.includes("\0")) throw new HttpError(400, "Chemin de dossier de travail invalide.");
@@ -311,6 +329,12 @@ export class AppService {
     const data = this.storage.dataDir;
     if (isInsideDir(data, dir) || isInsideDir(dir, data))
       throw new HttpError(400, "Le dossier de travail ne peut pas contenir les données de MyClaude (ni être dedans).");
+    if (opts.mustExist) {
+      const st = await fsp.stat(dir).catch(() => null);
+      if (!st) throw new HttpError(400, "Ce dossier de travail n'existe pas (ou plus).");
+      if (!st.isDirectory()) throw new HttpError(400, "Le dossier de travail doit être un dossier.");
+      return dir;
+    }
     try {
       await fsp.mkdir(dir, { recursive: true });
       const st = await fsp.stat(dir);
@@ -391,7 +415,10 @@ export class AppService {
     await this.storage.deleteSession(id);
     // Transcription Claude Code correspondante : seulement si localisable de façon sûre
     // (ID exact de la session moteur, dans le dossier projet de son cwd).
-    if (meta.engineSessionId && meta.engineCwd) {
+    // Jamais la transcription d'origine d'une session reprise (v3) : seule la copie forkée nous appartient.
+    const isOriginal =
+      !!meta.origin && meta.engineSessionId?.toLowerCase() === meta.origin.sessionId.toLowerCase();
+    if (meta.engineSessionId && meta.engineCwd && !isOriginal) {
       const provider = this.providerFactory(await this.storage.readConfig());
       await provider
         ?.deleteTranscript?.(meta.engineSessionId, meta.engineCwd)
@@ -612,12 +639,14 @@ export class AppService {
 
     try {
       const gov = await this.governance.read();
+      // v3 : dossier propre à la session s'il existe, sinon dossier global.
+      const workspaceDir = meta.workspaceDir ?? cfg.workspaceDir;
       let workspace: string;
       try {
-        await fsp.mkdir(cfg.workspaceDir, { recursive: true });
-        workspace = canonicalize(cfg.workspaceDir);
+        await fsp.mkdir(workspaceDir, { recursive: true });
+        workspace = canonicalize(workspaceDir);
       } catch {
-        throw new ProviderError("bad_request", `Dossier de travail inutilisable : ${cfg.workspaceDir}`);
+        throw new ProviderError("bad_request", `Dossier de travail inutilisable : ${workspaceDir}`);
       }
       const memory = (await this.storage.readMemory()).trim();
       const base = gov.system.trim();
@@ -663,8 +692,14 @@ export class AppService {
         });
 
       // Reprise de la session moteur si elle existe ET a été créée dans le même dossier de travail.
+      // v3 : jamais l'ID de la session Claude Code d'origine (elle ne doit pas être écrite), seulement sa copie forkée.
+      const originId = meta.origin?.sessionId.toLowerCase();
       const resume =
-        meta.engineSessionId && (!meta.engineCwd || meta.engineCwd === workspace) ? meta.engineSessionId : undefined;
+        meta.engineSessionId &&
+        meta.engineSessionId.toLowerCase() !== originId &&
+        (!meta.engineCwd || meta.engineCwd === workspace)
+          ? meta.engineSessionId
+          : undefined;
       let result: ProviderChatResult;
       try {
         result = await run(resume ? text : buildPromptWithTranscript(history, text), resume);
@@ -701,6 +736,93 @@ export class AppService {
       if (err instanceof ProviderError && (err.code === "not_logged_in" || err.code === "auth")) this.statusCache = null;
       const msg = await finish({ error: message });
       sink("error", { error: msg.error });
+    }
+  }
+
+  // ------------------------------------------------- sessions Claude Code (v3)
+
+  /** IDs (minuscules) des sessions moteur créées par MyClaude. */
+  private async knownEngineIds(): Promise<Set<string>> {
+    const out = new Set<string>();
+    for (const s of await this.storage.listSessions()) if (s.engineSessionId) out.add(s.engineSessionId.toLowerCase());
+    return out;
+  }
+
+  private async cc<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof CcNotFoundError) throw new HttpError(404, err.message);
+      throw err;
+    }
+  }
+
+  listCcProjects(): Promise<CcProject[]> {
+    return this.cc(() => this.claudeCode.listProjects());
+  }
+
+  async listCcSessions(projectId: string, q?: string): Promise<CcSessionSummary[]> {
+    if (q !== undefined && q.length > 500) throw new HttpError(400, "Filtre trop long.");
+    const known = await this.knownEngineIds();
+    return this.cc(() => this.claudeCode.listSessions(projectId, known, q));
+  }
+
+  async getCcTranscript(projectId: string, sessionId: string): Promise<CcTranscript> {
+    const known = await this.knownEngineIds();
+    return this.cc(() => this.claudeCode.readTranscript(projectId, sessionId, known));
+  }
+
+  /**
+   * Reprend une session Claude Code dans une nouvelle session MyClaude :
+   * - dossier de travail validé (400 + raison sinon) ;
+   * - messages d'origine importés (`imported: true`) ;
+   * - si le dossier est celui d'origine, la transcription est FORKÉE (nouvel ID, nouveau fichier) et
+   *   c'est la copie qui sera reprise ; l'original n'est jamais passé au moteur ni modifié.
+   *   Sinon (ou si le fork échoue), le 1er message réinjecte la transcription importée.
+   */
+  async continueCcSession(projectId: string, sessionId: string, body: unknown): Promise<SessionMeta> {
+    if (this.stopped) throw new HttpError(503, "L'application est en cours de fermeture.");
+    const transcript = await this.getCcTranscript(projectId, sessionId);
+    const raw = (body as { workspaceDir?: unknown } | undefined)?.workspaceDir;
+    const workspaceDir = await this.validateWorkspaceDir(raw, { mustExist: true });
+
+    const cfg = await this.storage.readConfig();
+    const created = await this.storage.createSession({ title: transcript.session.title, model: cfg.model });
+    const id = created.id;
+    try {
+      const imported = transcript.messages.map((m) => ({ ...m, imported: true }));
+      if (imported.length) await this.storage.appendMessages(id, imported);
+      let meta = await this.storage.updateMeta(id, (m) => {
+        m.workspaceDir = workspaceDir;
+        m.origin = { type: "claude-code", projectId, sessionId };
+      });
+
+      const originCwd = transcript.session.cwd;
+      const sameDir =
+        !!originCwd &&
+        path.isAbsolute(originCwd) &&
+        isInsideDir(originCwd, workspaceDir) &&
+        isInsideDir(workspaceDir, originCwd);
+      if (sameDir && this.forkCcSession) {
+        try {
+          const forkId = await this.forkCcSession(sessionId);
+          if (!isValidCcSessionId(forkId) || forkId.toLowerCase() === sessionId.toLowerCase())
+            throw new Error("identifiant de fork invalide");
+          meta = await this.storage.updateMeta(id, (m) => {
+            m.engineSessionId = forkId;
+            m.engineCwd = canonicalize(workspaceDir);
+          });
+        } catch (err) {
+          this.log.warn(
+            `session ${id} : fork de la session Claude Code impossible (${err instanceof Error ? err.message : String(err)}) ; ` +
+              "la transcription sera réinjectée au premier message",
+          );
+        }
+      }
+      return meta;
+    } catch (err) {
+      await this.storage.deleteSession(id).catch(() => {});
+      throw err;
     }
   }
 

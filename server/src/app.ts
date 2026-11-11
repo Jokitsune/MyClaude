@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequestHandler } from "./http.js";
 import { consoleLogger, type Logger } from "./log.js";
-import { defaultProviderFactory } from "./providers/index.js";
+import { defaultProviderFactory, forkClaudeCodeSession } from "./providers/index.js";
 import type { ProviderFactory } from "./providers/types.js";
 import { AppService } from "./service.js";
 import { Storage } from "./storage.js";
@@ -36,6 +36,10 @@ export interface InternalOptions {
   permissionTimeoutMs?: number;
   /** Dossier de travail par défaut (tests). */
   defaultWorkspaceDir?: string;
+  /** v3 : dossier `projects` de Claude Code (tests). */
+  claudeProjectsDir?: () => string;
+  /** v3 : fonction de fork d'une session Claude Code (tests). */
+  forkSession?: (sessionId: string) => Promise<string>;
 }
 
 export interface InternalRunningServer extends RunningServer {
@@ -71,6 +75,8 @@ export async function startServerInternal(opts: StartOptions = {}, internal: Int
   const storage = new Storage(dataDir, internal.defaultWorkspaceDir);
   const service = new AppService(storage, internal.providerFactory ?? defaultProviderFactory, log, {
     permissionTimeoutMs: internal.permissionTimeoutMs,
+    claudeProjectsDir: internal.claudeProjectsDir,
+    forkSession: internal.forkSession ?? forkClaudeCodeSession,
   });
   await service.start({ idleCheck: internal.idleCheck });
 

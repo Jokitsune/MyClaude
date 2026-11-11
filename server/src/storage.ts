@@ -17,7 +17,7 @@ import {
   type SessionMeta,
   type StoredConfig,
 } from "./types.js";
-import { KeyedMutex, appendJsonLine, atomicWrite, atomicWriteJson, readJson, readJsonLines } from "./fsutil.js";
+import { KeyedMutex, appendJsonLine, appendJsonLines, atomicWrite, atomicWriteJson, readJson, readJsonLines } from "./fsutil.js";
 
 /** Format des identifiants de session : "2026-11-11_143207_ab12". Aucune traversée de chemin possible. */
 const SESSION_ID_RE = /^\d{4}-\d{2}-\d{2}_\d{6}_[a-f0-9]{4,8}$/;
@@ -228,6 +228,17 @@ export class Storage {
 
   async appendMessage(id: string, message: ChatMessage): Promise<void> {
     await this.appendEvent(id, { t: nowIso(), type: "message", message });
+  }
+
+  /** Ajoute plusieurs messages d'un coup (import v3). */
+  async appendMessages(id: string, messages: ChatMessage[]): Promise<void> {
+    const t = nowIso();
+    await this.lock.run(`events:${id}`, () =>
+      appendJsonLines(
+        this.eventsFile(id),
+        messages.map((message) => ({ t, type: "message", message }) satisfies SessionEvent),
+      ),
+    );
   }
 
   /** Clôt une session ouverte (no-op si déjà close). Renvoie la meta à jour. */

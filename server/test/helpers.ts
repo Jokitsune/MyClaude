@@ -24,6 +24,8 @@ export class FakeProvider implements Provider {
   readonly name = "fake";
   chatCalls = 0;
   jsonCalls = 0;
+  /** Prompts reçus par generateJson (bilans). */
+  jsonPrompts: string[] = [];
   /** Paramètres reçus à chaque appel de chat(). */
   calls: ProviderChatParams[] = [];
   /** Si défini, chat() émet ce premier delta puis attend l'annulation. */
@@ -66,6 +68,7 @@ export class FakeProvider implements Provider {
   }
 
   async generateJson(_p: ProviderJsonParams): Promise<unknown> {
+    this.jsonPrompts.push(_p.prompt);
     this.jsonCalls++;
     if (this.jsonError) throw this.jsonError;
     return this.jsonResult;

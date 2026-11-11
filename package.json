@@ -1,0 +1,14 @@
+{
+  "name": "myclaude",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Interface personnelle et 100 % locale pour Claude",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix web install && npm --prefix desktop install",
+    "build": "npm --prefix server run build && npm --prefix web run build",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "start": "npm run build && npm --prefix server start",
+    "desktop": "npm run build && npm --prefix desktop start"
+  }
+}

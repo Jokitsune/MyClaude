@@ -1,0 +1,49 @@
+{
+  "name": "myclaude-desktop",
+  "productName": "MyClaude",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MyClaude — fenêtre Electron qui embarque le serveur local et l'interface web",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "tsc -p tsconfig.json",
+    "stage": "node scripts/stage.mjs",
+    "dist": "npm run stage && electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^45.3.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "~5.9.0"
+  },
+  "build": {
+    "appId": "local.myclaude.desktop",
+    "productName": "MyClaude",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "build/server", "to": "server" },
+      { "from": "build/web", "to": "web" }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "MyClaude"
+    }
+  }
+}
